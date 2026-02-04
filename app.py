@@ -24,26 +24,23 @@ client = OpenAI(
 # --- 1. FHIR & INTEROPERABILITY LAYER ---
 def parse_fhir_bundle(fhir_json):
     try:
-        # Check if input is empty
         if not fhir_json.strip():
             return "No data provided."
         
         data = json.loads(fhir_json)
         
-        # Handling the simplified mock structure and standard FHIR entry list
         if "entry" in data:
-            # Basic parsing for the standard FHIR format
             patient = "Unknown"
             request = "Unknown Service"
             for entry in data["entry"]:
                 res = entry.get("resource", {})
                 if res.get("resourceType") == "Patient":
-                    patient = res.get("name", [{}])[0].get("family", "Unknown")
+                    name_list = res.get("name", [{}])
+                    patient = name_list[0].get("family", "Unknown")
                 if res.get("resourceType") == "ServiceRequest":
                     request = res.get("code", {}).get("text", "Unknown Service")
             return f"Patient: {patient}\nRequest: {request}"
         else:
-            # Original simple parser for your default mock data
             patient = data.get("patient", {}).get("name", "Unknown")
             condition = data.get("condition", {}).get("code", "Unknown Condition")
             request = data.get("serviceRequest", {}).get("type", "Unknown Service")
@@ -82,22 +79,24 @@ st.markdown("### FHIR-Integrated Clinical Decision Support System")
 
 tab1, tab2 = st.tabs(["⚡ Live Analysis", "🧪 Batch Evaluation"])
 
-# --- TAB 1: LIVE INTERACTIVE DASHBOARD ---
 with tab1:
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("📥 Input: FHIR Resource")
         
-        # Initialize session state for fhir_input if it doesn't exist
-        if 'fhir_input' not in st.session_state:
-            st.session_state['fhir_input'] = json.dumps({
-                "resourceType": "Bundle",
-                "patient": {"id": "P-123", "name": "John Doe"},
-                "condition": {"code": "M54.5 (Low Back Pain)", "onset": "2023-11-01"},
-                "serviceRequest": {"type": "Lumbar MRI", "priority": "routine"},
-                "clinicalNote": "Patient has had back pain for 2 weeks. No PT tried yet."
-            }, indent=2)
+        # Define the default data for first-time load
+        default_fhir_json = json.dumps({
+            "resourceType": "Bundle",
+            "patient": {"id": "P-123", "name": "John Doe"},
+            "condition": {"code": "M54.5 (Low Back Pain)", "onset": "2023-11-01"},
+            "serviceRequest": {"type": "Lumbar MRI", "priority": "routine"},
+            "clinicalNote": "Patient has had back pain for 2 weeks. No PT tried yet."
+        }, indent=2)
+
+        # Initialize session state for the content of the text area
+        if 'fhir_content' not in st.session_state:
+            st.session_state['fhir_content'] = default_fhir_json
 
         # The Load Sample Button
         if st.button("📝 Load Sample FHIR Data"):
@@ -108,12 +107,18 @@ with tab1:
                     {"resource": {"resourceType": "ServiceRequest", "code": {"text": "MRE brain with contrast"}}}
                 ]
             }
-            # Update session state with pretty-printed JSON
-            st.session_state['fhir_input'] = json.dumps(sample_fhir, indent=2)
-            st.rerun() # Refresh to show the new value in the text area
+            # Directly update the session state and rerun
+            st.session_state['fhir_content'] = json.dumps(sample_fhir, indent=2)
+            st.rerun()
 
-        # Single Text Area linked to session state
-        fhir_input = st.text_area("Paste FHIR JSON Bundle", value=st.session_state['fhir_input'], height=250)
+        # Text Area: We use st.session_state['fhir_content'] as the value
+        # Any manual change by the user updates fhir_input immediately
+        fhir_input = st.text_area("Paste FHIR JSON Bundle", 
+                                 value=st.session_state['fhir_content'], 
+                                 height=250)
+        
+        # Crucial: Sync manual changes back to session state so they persist
+        st.session_state['fhir_content'] = fhir_input
         
         st.subheader("📜 Insurance Policy")
         policy_input = st.text_area("Policy Rules", value="Approve MRI only if: Pain > 6 weeks AND Physical Therapy > 4 weeks.", height=100)
