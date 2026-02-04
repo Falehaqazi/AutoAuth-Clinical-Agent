@@ -23,3 +23,6 @@ To run the dashboard locally for evaluation:
 1. **Install Dependencies:**
    ```bash
    pip install streamlit pandas python-dotenv openai pydantic
+
+## 🔗 Live Demo
+Check out the live dashboard here: [AutoAuth Live App](https://falehaqazi-autoauth-clinical-agent-app-tx3rkx.streamlit.app/)
