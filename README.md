@@ -26,9 +26,6 @@ This project was engineered to solve the "Black Box" problem in Health AI by imp
 * **Model:** Llama-3.3-70b-Versatile (via Groq API)
 * **Libraries:** `pydantic` (Data Validation), `python-dotenv` (Security), `openai` (Client SDK)
 
-## 🎥 Demo
-**[Watch the 60-Second Demo Here]** (Paste your Loom Link Here)
-
 ## 🚀 How to Run
 ```bash
 # 1. Clone the repo
