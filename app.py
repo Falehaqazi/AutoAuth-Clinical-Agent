@@ -22,17 +22,35 @@ client = OpenAI(
 )
 
 # --- 1. FHIR & INTEROPERABILITY LAYER ---
-# We simulate parsing a standard FHIR Bundle (Patient + Condition + ServiceRequest)
 def parse_fhir_bundle(fhir_json):
     try:
+        # Check if input is empty
+        if not fhir_json.strip():
+            return "No data provided."
+        
         data = json.loads(fhir_json)
-        patient = data.get("patient", {}).get("name", "Unknown")
-        condition = data.get("condition", {}).get("code", "Unknown Condition")
-        request = data.get("serviceRequest", {}).get("type", "Unknown Service")
-        history = data.get("clinicalNote", "")
-        return f"Patient: {patient}\nCondition: {condition}\nRequest: {request}\nNotes: {history}"
-    except Exception:
-        return "Error parsing FHIR JSON"
+        
+        # Handling the simplified mock structure and standard FHIR entry list
+        if "entry" in data:
+            # Basic parsing for the standard FHIR format
+            patient = "Unknown"
+            request = "Unknown Service"
+            for entry in data["entry"]:
+                res = entry.get("resource", {})
+                if res.get("resourceType") == "Patient":
+                    patient = res.get("name", [{}])[0].get("family", "Unknown")
+                if res.get("resourceType") == "ServiceRequest":
+                    request = res.get("code", {}).get("text", "Unknown Service")
+            return f"Patient: {patient}\nRequest: {request}"
+        else:
+            # Original simple parser for your default mock data
+            patient = data.get("patient", {}).get("name", "Unknown")
+            condition = data.get("condition", {}).get("code", "Unknown Condition")
+            request = data.get("serviceRequest", {}).get("type", "Unknown Service")
+            history = data.get("clinicalNote", "")
+            return f"Patient: {patient}\nCondition: {condition}\nRequest: {request}\nNotes: {history}"
+    except Exception as e:
+        return f"Error parsing FHIR JSON: {str(e)}"
 
 # --- 2. AI DECISION ENGINE ---
 class DecisionSchema(BaseModel):
@@ -62,7 +80,6 @@ def analyze_claim(clinical_text, policy):
 st.title("🏥 Auto-Auth: Intelligent Prior Authorization")
 st.markdown("### FHIR-Integrated Clinical Decision Support System")
 
-# Tabs for different modes
 tab1, tab2 = st.tabs(["⚡ Live Analysis", "🧪 Batch Evaluation"])
 
 # --- TAB 1: LIVE INTERACTIVE DASHBOARD ---
@@ -72,16 +89,31 @@ with tab1:
     with col1:
         st.subheader("📥 Input: FHIR Resource")
         
-        # Pre-filled FHIR Mock Data
-        default_fhir = json.dumps({
-            "resourceType": "Bundle",
-            "patient": {"id": "P-123", "name": "John Doe"},
-            "condition": {"code": "M54.5 (Low Back Pain)", "onset": "2023-11-01"},
-            "serviceRequest": {"type": "Lumbar MRI", "priority": "routine"},
-            "clinicalNote": "Patient has had back pain for 2 weeks. No PT tried yet."
-        }, indent=2)
-        
-        fhir_input = st.text_area("Paste FHIR JSON Bundle", value=default_fhir, height=250)
+        # Initialize session state for fhir_input if it doesn't exist
+        if 'fhir_input' not in st.session_state:
+            st.session_state['fhir_input'] = json.dumps({
+                "resourceType": "Bundle",
+                "patient": {"id": "P-123", "name": "John Doe"},
+                "condition": {"code": "M54.5 (Low Back Pain)", "onset": "2023-11-01"},
+                "serviceRequest": {"type": "Lumbar MRI", "priority": "routine"},
+                "clinicalNote": "Patient has had back pain for 2 weeks. No PT tried yet."
+            }, indent=2)
+
+        # The Load Sample Button
+        if st.button("📝 Load Sample FHIR Data"):
+            sample_fhir = {
+                "resourceType": "Bundle",
+                "entry": [
+                    {"resource": {"resourceType": "Patient", "name": [{"family": "Doe"}]}},
+                    {"resource": {"resourceType": "ServiceRequest", "code": {"text": "MRE brain with contrast"}}}
+                ]
+            }
+            # Update session state with pretty-printed JSON
+            st.session_state['fhir_input'] = json.dumps(sample_fhir, indent=2)
+            st.rerun() # Refresh to show the new value in the text area
+
+        # Single Text Area linked to session state
+        fhir_input = st.text_area("Paste FHIR JSON Bundle", value=st.session_state['fhir_input'], height=250)
         
         st.subheader("📜 Insurance Policy")
         policy_input = st.text_area("Policy Rules", value="Approve MRI only if: Pain > 6 weeks AND Physical Therapy > 4 weeks.", height=100)
@@ -92,14 +124,11 @@ with tab1:
         st.subheader("📤 AI Decision Output")
         if run_btn:
             with st.spinner("Parsing FHIR & Consulting LLM..."):
-                # 1. Parse FHIR
                 clinical_summary = parse_fhir_bundle(fhir_input)
                 st.info(f"**Parsed Context:**\n{clinical_summary}")
                 
-                # 2. Run AI
                 result = analyze_claim(clinical_summary, policy_input)
                 
-                # 3. Display Results
                 if result['decision'] == "APPROVED":
                     st.success(f"✅ **APPROVED** (Conf: {result['confidence']})")
                 elif result['decision'] == "DENIED":
@@ -108,17 +137,14 @@ with tab1:
                     st.warning(f"⚠️ **NEEDS REVIEW** (Conf: {result['confidence']})")
                 
                 st.write(f"**Reason:** {result['reason']}")
-                
-                # Metric Visualization
                 st.progress(result['confidence'], text="AI Confidence Score")
 
 # --- TAB 2: PERFORMANCE EVALUATION ---
 with tab2:
     st.header("🧪 Clinical Dataset Evaluation")
-    st.write("Simulating batch processing on synthetic clinical records to measure Accuracy, Precision, and Recall.")
+    st.write("Simulating batch processing on synthetic clinical records.")
     
     if st.button("Run Validation Dataset"):
-        # Synthetic "Gold Standard" Dataset
         dataset = [
             {"id": 1, "truth": "DENIED", "note": "Back pain 1 week. No PT.", "policy": "Pain > 6w, PT > 4w"},
             {"id": 2, "truth": "APPROVED", "note": "Pain 12 weeks. PT 8 weeks done.", "policy": "Pain > 6w, PT > 4w"},
@@ -145,6 +171,5 @@ with tab2:
         df = pd.DataFrame(results)
         st.dataframe(df, use_container_width=True)
         
-        # Calculate Simple Accuracy
         accuracy = len(df[df["Match"] == "✅"]) / len(df)
         st.metric(label="Model Accuracy", value=f"{accuracy*100}%")
