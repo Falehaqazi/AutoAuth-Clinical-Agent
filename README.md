@@ -1,41 +1,43 @@
-# Auto-Auth: Clinical Decision Support Agent 🏥
+# 🏥 AutoAuth: FHIR-Integrated Clinical Decision Support
+**An AI-driven Prior Authorization engine designed for healthcare interoperability.**
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![AI Model](https://img.shields.io/badge/Model-Llama3_70b-orange)
-![Compliance](https://img.shields.io/badge/HIPAA-Compliant-green)
+![Python](https://img.shields.io/badge/Python-3.13-blue)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
+![FHIR](https://img.shields.io/badge/Standard-HL7%20FHIR-green)
+![LLM](https://img.shields.io/badge/Model-Llama--3.3--70B-orange)
 
-## ⚡ Overview
-**Auto-Auth** is a Neuro-Symbolic AI agent designed to automate the insurance prior authorization process. Unlike standard "chatbots," this system uses a deterministic pipeline to validate unstructured clinical notes against structured policy guidelines, ensuring both efficiency and patient safety.
+## 🚀 Overview
+AutoAuth is a "Human-in-the-loop" AI agent that automates the medical prior authorization process. It takes structured **HL7 FHIR** data, compares it against complex insurance policies, and provides a transparent approval/denial decision with a confidence score.
 
-This project was engineered to solve the "Black Box" problem in Health AI by implementing **Confidence-Based Routing**—automatically escalating low-certainty claims to human reviewers.
+This project solves the "Black Box" problem in healthcare AI by providing clear reasoning and a dedicated performance evaluation suite for clinical auditing.
 
-## 🔑 Key Features
-* **🛡️ Privacy First:** Implements local PII (Personally Identifiable Information) redaction *before* data leaves the secure environment.
-* **🧠 Neuro-Symbolic Logic:** Combines LLM reasoning with strict policy rules (e.g., "Must have 6 weeks of conservative therapy").
-* **⚠️ Human-in-the-Loop:** Automatically flags ambiguous cases (confidence < 85%) for manual review, preventing AI hallucinations from denying care.
-* **🚀 Batch Processing:** Capable of processing multiple patient claims in a single stream.
+## ✨ Key Features
+* **🩺 FHIR Interoperability:** Automatically parses FHIR JSON bundles (Patient, Condition, and ServiceRequest resources).
+* **🧠 Neuro-Symbolic Reasoning:** Combines LLM intelligence (Llama-3.3-70B) with hardcoded clinical policy logic.
+* **📊 Clinical Dashboard:** A professional Web UI built with Streamlit for clinician review and real-time analysis.
+* **🧪 Performance Evaluation:** Built-in validation module to measure AI accuracy, precision, and recall against synthetic clinical datasets.
+* **🛡️ Confidence-Based Routing:** Decisions with low confidence (<0.85) are automatically flagged for manual human review.
 
-## 🛠️ Architecture
-1.  **Input:** Clinical Note (Unstructured) + Insurance Policy (Structured).
-2.  **Sanitization:** Python-based PII redaction layer.
-3.  **Inference:** Llama-3-70b (via Groq) extracts clinical entities and validates against policy criteria.
-4.  **Decision Engine:** JSON-structured output with `APPROVED`, `DENIED`, or `HUMAN_REVIEW` status.
+## 🛠️ Technical Stack
+* **Language:** Python 3.13
+* **LLM API:** Groq / OpenAI (Llama-3.3-70B-Versatile)
+* **Interface:** Streamlit
+* **Data Standards:** HL7 FHIR (JSON)
+* **Schema Validation:** Pydantic (Structured Outputs)
 
-## 💻 Tech Stack
-* **Language:** Python
-* **Model:** Llama-3.3-70b-Versatile (via Groq API)
-* **Libraries:** `pydantic` (Data Validation), `python-dotenv` (Security), `openai` (Client SDK)
+## 📸 Dashboard Preview
+The dashboard consists of two main modules:
+1.  **Live Analysis:** Ingests FHIR resources and outputs immediate decisions.
+2.  **Batch Evaluation:** Runs the model against a "Gold Standard" dataset to calculate accuracy metrics.
 
-## 🚀 How to Run
+## 🏁 Getting Started
+
+### 1. Prerequisites
+* Python 3.13+
+* A Groq API Key (stored in a `.env` file)
+
+### 2. Installation
 ```bash
-# 1. Clone the repo
 git clone [https://github.com/Falehaqazi/AutoAuth-Clinical-Agent.git](https://github.com/Falehaqazi/AutoAuth-Clinical-Agent.git)
-
-# 2. Install dependencies
-pip install openai pydantic python-dotenv
-
-# 3. Set up API Key
-# Create a .env file and add: OPENAI_API_KEY=gsk_...
-
-# 4. Run the agent
-python main.py
+cd AutoAuth
+pip install streamlit pandas python-dotenv openai pydantic
