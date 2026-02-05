@@ -1,28 +1,23 @@
-# 🏥 AutoAuth: FHIR-Integrated Clinical Decision Support
-**An AI-driven Prior Authorization engine designed for healthcare interoperability.**
+# 🏥 Auto-Auth: Production-Grade Prior-Auth Pipeline
 
-![Python](https://img.shields.io/badge/Python-3.13-blue)
-![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
-![FHIR](https://img.shields.io/badge/Standard-HL7%20FHIR-green)
-![LLM](https://img.shields.io/badge/Model-Llama--3.3--70B-orange)
-
-## 🚀 Overview
-AutoAuth is a "Human-in-the-loop" AI agent that automates the medical prior authorization process. It ingests structured **HL7 FHIR** data, evaluates it against clinical insurance policies, and provides a transparent decision with a confidence score.
+An AI-driven clinical decision support system designed for high-integrity healthcare environments. This system automates the review of FHIR-formatted medical requests against insurance policies with full auditability.
 
 
 
-## ✨ Key Features
-* **🩺 FHIR Integration:** Specifically designed to parse FHIR-like resource structures (Patient, Condition, ServiceRequest) for seamless EHR integration.
-* **🧠 Neuro-Symbolic Reasoning:** Combines LLM intelligence with hardcoded clinical policy logic to ensure decisions follow strict medical guidelines.
-* **📊 Clinician Dashboard:** A Streamlit-based UI that allows medical reviewers to audit AI decisions in real-time.
-* **🧪 Performance Evaluation:** A built-in validation suite that measures accuracy, precision, and recall against synthetic clinical benchmarks.
+## 🏗️ System Architecture
+- **Backend**: FastAPI microservice handling LLM orchestration and logic.
+- **Frontend**: Streamlit Operations Console for clinical reviewers.
+- **Data Layer**: Persistent JSON-based Audit Trail for HIPAA compliance and traceability.
 
-## 🏁 How to Run the UI
-To run the dashboard locally for evaluation:
+## 🛡️ Key Engineering Features
+1. **Traceability**: Every decision is assigned a unique UUID and logged with a timestamp, raw reasoning, and confidence score.
+2. **PII Protection**: Integrated redaction layer to ensure data privacy before LLM transmission.
+3. **Safety Thresholds**: Logic-based fallbacks for low-confidence AI outputs.
+4. **Interoperability**: Native support for FHIR (Fast Healthcare Interoperability Resources) data structures.
 
-1. **Install Dependencies:**
-   ```bash
-   pip install streamlit pandas python-dotenv openai pydantic
+## 🚦 How to Run
 
-## 🔗 Live Demo
-Check out the live dashboard here: [AutoAuth Live App](https://falehaqazi-autoauth-clinical-agent-app-tx3rkx.streamlit.app/)
+### 1. Start the Backend (API)
+```bash
+cd backend
+uvicorn main:app --reload
