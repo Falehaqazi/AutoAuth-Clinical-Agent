@@ -5,27 +5,40 @@ import re
 from datetime import datetime
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIGURATION & APP INIT ---
 load_dotenv()
 app = FastAPI(title="Auto-Auth Production API", version="1.0.0")
 
-# Initialize LLM Client (using Groq for high-speed inference)
+# Requirement: CORS Middleware 
+# This allows your Streamlit Cloud frontend to talk to this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For production, replace "*" with your Streamlit URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize LLM Client
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1", 
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
 # Ensure data directory exists for audit logs
+# Note: On cloud platforms like Render, local files are temporary. 
+# For a real job, you'd use a Database, but this works for a demo!
 LOG_DIR = "../data"
 LOG_FILE = f"{LOG_DIR}/audit_log.json"
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
-# --- 2. SCHEMAS (Requirement 6: Versioning) ---
+# --- 2. SCHEMAS ---
 class AnalysisRequest(BaseModel):
     fhir_bundle: dict
     policy: str
@@ -38,11 +51,11 @@ class AuditEntry(BaseModel):
     reasoning: str
     confidence: float
     schema_version: str = "v1.0"
-    status: str = "COMPLETED"  # Can be COMPLETED or PENDING_HUMAN_REVIEW
+    status: str = "COMPLETED"
 
-# --- 3. PRIVACY LAYER (Requirement 2: De-identification) ---
+# --- 3. PRIVACY LAYER ---
 def redact_pii(text: str) -> str:
-    """Simple regex layer to ensure no names or IDs are passed to the LLM."""
+    """Requirement 2: Ensure no names or IDs are passed to the LLM."""
     text = re.sub(r"Patient: \w+", "Patient: [REDACTED]", text)
     text = re.sub(r"ID: \d+", "ID: [REDACTED]", text)
     return text
@@ -54,22 +67,30 @@ def save_to_audit_log(entry: AuditEntry):
         try:
             with open(LOG_FILE, "r") as f:
                 logs = json.load(f)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, FileNotFoundError):
             logs = []
     
     logs.append(entry.model_dump())
     with open(LOG_FILE, "w") as f:
         json.dump(logs, f, indent=2)
 
+@app.get("/")
+async def root():
+    """Requirement 3: Cloud Health Check endpoint"""
+    return {
+        "status": "online",
+        "service": "Auto-Auth Backend",
+        "timestamp": datetime.now().isoformat()
+    }
+
 @app.post("/analyze", response_model=AuditEntry)
 async def analyze_claim(request: AnalysisRequest):
     try:
-        # Step 1: Extract clinical story & Redact PII
+        # Step 1: Redact PII
         raw_clinical_data = json.dumps(request.fhir_bundle)
         safe_clinical_data = redact_pii(raw_clinical_data)
 
         # Step 2: LLM Orchestration
-        # Note: In a true prod environment, we'd use 'instructor' or tool_use for structured output
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -85,20 +106,17 @@ async def analyze_claim(request: AnalysisRequest):
         
         raw_response = completion.choices[0].message.content
         
-        # Step 3: Parse Decision (Simple parsing for demo logic)
+        # Step 3: Parse Decision
         decision = "APPROVED" if "DECISION: APPROVED" in raw_response.upper() else "DENIED"
         
-        # Step 4: Safety Threshold (Requirement 5: Fallback Logic)
-        # We simulate a confidence score extraction here
+        # Step 4: Safety Threshold (Fallback Logic)
         confidence = 0.95 
         status = "COMPLETED"
         
-        if "CONFIDENCE:" in raw_response:
+        conf_match = re.search(r"CONFIDENCE:\s*([\d\.]+)", raw_response)
+        if conf_match:
             try:
-                # Extracting float from string like "CONFIDENCE: 0.85"
-                conf_match = re.search(r"CONFIDENCE:\s*([\d\.]+)", raw_response)
-                if conf_match:
-                    confidence = float(conf_match.group(1))
+                confidence = float(conf_match.group(1))
             except:
                 pass
 
@@ -128,13 +146,8 @@ async def analyze_claim(request: AnalysisRequest):
 
 @app.get("/audit")
 async def get_audit_trail():
-    """Requirement 2: Full Traceability Access"""
+    """Requirement 2: Full Traceability Access for Admin UI"""
     if not os.path.exists(LOG_FILE):
         return []
     with open(LOG_FILE, "r") as f:
         return json.load(f)
-
-@app.get("/health")
-async def health_check():
-    """Requirement 3: Observability"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "model": "llama-3.3-70b"}
