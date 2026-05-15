@@ -2,4 +2,4 @@ venv/
 .env
 __pycache__/
 data/audit_log.json
-v1/
+v1/.env 
