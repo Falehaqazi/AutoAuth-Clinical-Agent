@@ -1,5 +1,14 @@
+# Backend dependencies. Kept in sync with the root requirements.txt.
 fastapi
-uvicorn
-openai
-python-dotenv
+uvicorn[standard]
 pydantic
+python-dotenv
+langgraph
+langchain
+langchain-core
+langchain-community
+langchain-groq
+langchain-text-splitters
+langchain-huggingface
+sentence-transformers
+faiss-cpu
