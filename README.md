@@ -7,7 +7,7 @@ confidence score, a reasoning trace, and an audit record.
 
 **Stack:** Python, LangGraph, FAISS, Sentence-Transformers, Llama 3.1 8B via Groq, FastAPI, Streamlit
 
-<!-- Add once confirmed: **Live demo:** https://<your-render-url> -->
+**Live demo:** https://falehaqazi-autoauth-clinical-agent-app-tx3rkx.streamlit.app/
 
 ## Architecture
 
