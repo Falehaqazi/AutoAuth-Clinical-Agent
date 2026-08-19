@@ -13,10 +13,11 @@ confidence score, a reasoning trace, and an audit record.
 
 A six-node LangGraph state machine:
 
+```
 redact -> retrieve -> reason -> tools -> critique -> finalize
-^ |
-+---------+ (ReAct loop)
-
+                        ^         |
+                        +---------+   (ReAct loop)
+```
 
 | Node | Responsibility |
 |---|---|
@@ -55,27 +56,28 @@ the fact.
 
 ## Repository layout
 
-app.py Streamlit operations console
-eval_autoauth.py Evaluation harness
+```
+app.py                    Streamlit operations console
+eval_autoauth.py          Evaluation harness
 backend/
-main.py FastAPI application and routes
-agent.py LangGraph state machine and node definitions
-tools.py Tools available at the reasoning step
-policy_store.py Policy ingestion, chunking, FAISS index
-start.sh Service entrypoint
-synthpa60/ SynthPA-60 benchmark
-README.md Benchmark documentation
-cases.jsonl 60 labeled cases
-policies.jsonl 12 synthetic payer policies
-cases_plan.jsonl Stratification plan
-synthpa60_kit.py Case construction and label derivation
-audit.py Consistency audit over criterion assignments
-make_worksheet.py Generates the human validation worksheet
-mark_validated.py Records validation status
-validation_worksheet.md
-POLICY_SOURCING.md Provenance of the synthetic policies
+  main.py                 FastAPI application and routes
+  agent.py                LangGraph state machine and node definitions
+  tools.py                Tools available at the reasoning step
+  policy_store.py         Policy ingestion, chunking, FAISS index
+  start.sh                Service entrypoint
+synthpa60/                SynthPA-60 benchmark
+  README.md               Benchmark documentation
+  cases.jsonl             60 labeled cases
+  policies.jsonl          12 synthetic payer policies
+  cases_plan.jsonl        Stratification plan
+  synthpa60_kit.py        Case construction and label derivation
+  audit.py                Consistency audit over criterion assignments
+  make_worksheet.py       Generates the human validation worksheet
+  mark_validated.py       Records validation status
+  validation_worksheet.md
+  POLICY_SOURCING.md      Provenance of the synthetic policies
 requirements.txt
-
+```
 
 ## Running locally
 
