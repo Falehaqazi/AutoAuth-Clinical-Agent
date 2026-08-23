@@ -14,7 +14,7 @@ from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
 from backend.tools import lookup_cpt_code, lookup_icd10_code
-from backend.policy_store import retrieve_relevant_policy
+from backend.policy_store import retrieve_relevant_policy, retrieve_with_scores
 
 load_dotenv()
 
@@ -29,6 +29,9 @@ class AgentState(TypedDict):
     clinical_input: str
     redacted_input: str
     retrieved_policy: str
+    retrieved_chunk_ids: list
+    retrieved_policy_ids: list
+    retrieval_scores: list
     messages: Annotated[list, add_messages]
     draft_decision: str
     critique_verdict: str
@@ -48,7 +51,7 @@ if not _api_key:
     )
 
 TOOLS = [lookup_cpt_code, lookup_icd10_code]
-llm = ChatGroq(model="llama-3.1-8b-instant", api_key=_api_key, temperature=float(os.getenv("AUTOAUTH_TEMP", "0.1")))
+llm = ChatGroq(model="openai/gpt-oss-20b", api_key=_api_key, temperature=float(os.getenv("AUTOAUTH_TEMP", "0.1")))
 llm_with_tools = llm.bind_tools(TOOLS)
 
 
@@ -77,7 +80,9 @@ def redact_node(state: AgentState) -> dict:
 
 def retrieve_node(state: AgentState) -> dict:
     """Pull only the policy chunks relevant to this case."""
-    return {"retrieved_policy": retrieve_relevant_policy(state["redacted_input"], k=3)}
+    text, cids, pids, scores = retrieve_with_scores(state["redacted_input"], k=3)
+    return {"retrieved_policy": text, "retrieved_chunk_ids": cids,
+            "retrieved_policy_ids": pids, "retrieval_scores": scores}
 
 
 SYSTEM_PROMPT = """You are a Prior Authorization clinical reviewer using the ReAct pattern.
