@@ -1,0 +1,15 @@
+{
+  "started_utc": "2026-08-23T14:35:54.637409+00:00",
+  "finished_utc": "2026-08-23T15:06:17.378595+00:00",
+  "seeds": [
+    0
+  ],
+  "n_cases": 60,
+  "cases_file": "synthpa60/cases.jsonl",
+  "cases_sha256": "cc9e3327358bbdd0982debc968d1f73a06ed38cfb9c1958ca4da5fb7e0f3a8c8",
+  "governor": {
+    "rpm": 30,
+    "tpm": 6000
+  },
+  "python": "3.13.15 (main, Aug  6 2026, 11:06:23) [GCC 11.4.0]"
+}
