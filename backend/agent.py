@@ -48,7 +48,7 @@ if not _api_key:
     )
 
 TOOLS = [lookup_cpt_code, lookup_icd10_code]
-llm = ChatGroq(model="llama-3.1-8b-instant", api_key=_api_key, temperature=0.1)
+llm = ChatGroq(model="llama-3.1-8b-instant", api_key=_api_key, temperature=float(os.getenv("AUTOAUTH_TEMP", "0.1")))
 llm_with_tools = llm.bind_tools(TOOLS)
 
 
