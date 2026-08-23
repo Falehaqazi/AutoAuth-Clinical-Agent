@@ -5,7 +5,11 @@ safety behaviour is enforced by the graph structure rather than by prompt wordin
 Requests are reviewed against insurance policy text, and every decision carries a
 confidence score, a reasoning trace, and an audit record.
 
-**Stack:** Python, LangGraph, FAISS, Sentence-Transformers, Llama 3.1 8B via Groq, FastAPI, Streamlit
+The name is now partly a misnomer, and the evaluation below explains why: on the
+SynthPA-60 benchmark the confidence gate never fires. The structural rules do all
+the escalation work. That result is reported here rather than tuned away.
+
+**Stack:** Python, LangGraph, FAISS, Sentence-Transformers, `openai/gpt-oss-20b` via Groq, FastAPI, Streamlit
 
 **Live demo:** https://falehaqazi-autoauth-clinical-agent-app-tx3rkx.streamlit.app/
 
@@ -22,62 +26,184 @@ redact -> retrieve -> reason -> tools -> critique -> finalize
 | Node | Responsibility |
 |---|---|
 | `redact` | Strips identifiers from the request before anything is sent to the model |
-| `retrieve` | Top-3 semantic retrieval over policy documents via FAISS |
+| `retrieve` | Top-3 semantic retrieval over the policy corpus via FAISS |
 | `reason` | Drafts a recommendation against the retrieved policy, with tool access |
-| `tools` | Structured lookups called from the reasoning step |
-| `critique` | Reviews the draft and its reasoning trace |
-| `finalize` | Applies the confidence gate and emits the audited decision |
+| `tools` | Structured CPT and ICD-10 lookups called from the reasoning step |
+| `critique` | A second model call audits the draft; one revision is permitted |
+| `finalize` | Applies four escalation rules and emits the audited decision |
 
-Retrieval uses `all-MiniLM-L6-v2` embeddings. Generation runs
-`llama-3.1-8b-instant` through the Groq API. The backend is a FastAPI service;
-the operations console for human reviewers is a Streamlit app.
+Retrieval uses `all-MiniLM-L6-v2` embeddings over 300-character chunks with
+50-character overlap, indexed in a flat FAISS index built at startup.
+
+### Model note
+
+The system originally ran `llama-3.1-8b-instant`. Groq deprecated that model on
+17 June 2026, and AutoAuth now runs `openai/gpt-oss-20b`, the vendor-recommended
+replacement, at the same temperature (0.1) and with no other configuration
+change. Results predating that swap are superseded.
+
+This is itself relevant to the project's argument. The structural safety rules
+survived a change of model, vendor, and parameter count without modification. A
+threshold calibrated against the withdrawn model would not have.
 
 ## Safety design
 
-The three mechanisms below are the point of the project.
+The mechanisms below are the point of the project. Two are structural and two are
+probabilistic, and the evaluation shows that distinction matters a great deal.
 
 **1. Redaction before inference.** The `redact` node removes patient identifiers
 from the request text before it reaches retrieval or the LLM, so raw identifiers
 are never transmitted to a third-party model endpoint.
 
-**2. Confidence gate at 0.80.** The model emits a self-reported confidence with
-each draft. Anything below `0.80` is routed to human review rather than returned
-as a decision. Whether a self-reported score carries enough spread to threshold
-on is an open question — see Limitations.
+**2. No autonomous denial (structural).** The agent cannot issue an adverse
+recommendation on its own authority. Denials are always escalated to a human
+reviewer, on the principle that the cost of a wrong denial falls entirely on the
+patient and is not symmetric with the cost of a wrong approval. This is enforced
+by code in the finalization node, not by an instruction in the prompt.
 
-**3. No autonomous denial.** The agent cannot issue an adverse recommendation on
-its own authority. Denials are always escalated to a human reviewer, on the
-principle that the cost of a wrong denial falls entirely on the patient and is
-not symmetric with the cost of a wrong approval.
+**3. Unparseable output escalates (structural).** An output whose decision field
+cannot be read is routed to review rather than defaulting to approval. Absence of
+a readable decision is not evidence of a favourable one.
+
+**4. Confidence gate at 0.80 (probabilistic).** The model states a confidence
+value with each draft, and anything below `0.80` is routed to human review.
+**On SynthPA-60 this rule activated on 0 of 60 cases.** See Evaluation.
+
+**5. Unresolved critique escalates (probabilistic).** If the critic still objects
+after the revision budget is spent, the case goes to review.
 
 Every decision is written to a persistent audit trail with a UUID, timestamp,
-raw reasoning, and confidence score, so any output can be reconstructed after
-the fact.
+raw reasoning, confidence score, and escalation reason, so any output can be
+reconstructed after the fact.
+
+## SynthPA-60
+
+A 60-case benchmark over 12 synthetic payer policies, built 09 August 2026 and
+frozen under published SHA-256 hashes in `synthpa60/README.md`.
+
+Gold labels are derived from criteria vectors by a published deterministic rule
+rather than assigned by annotator judgment, so any reader can check every label
+against twenty lines of code. Clinical notes were generated by Claude Opus 5,
+which is not the system under test.
+
+| Stratum | n | Gold label |
+|---|---|---|
+| clear_approve | 15 | APPROVED |
+| clear_deny | 15 | DENIED |
+| documentation_gap | 15 | MORE_INFO |
+| borderline | 8 | APPROVED |
+| retrieval_distractor | 7 | APPROVED |
+
+All policies are synthetic, authored on the structural pattern of commercial
+medical policy bulletins. They are not transcribed from any published payer
+policy and carry no regulatory authority. No case has had clinician review.
+
+## Evaluation
+
+First complete run: 60 cases, zero execution errors, `openai/gpt-oss-20b` at
+temperature 0.1, single seed.
+
+The label space is three-valued but the system's action space is binary — it
+returns either APPROVED or PENDING_REVIEW — so the primary task is
+approve-versus-escalate.
+
+| | |
+|---|---|
+| Action accuracy | 93.3% (56/60), 95% CI 84.1–97.4% |
+| Coverage | 0.500 (30/60 auto-decided) |
+| Selective accuracy on the auto lane | 0.933 (28/30), CI 0.787–0.982 |
+| Escalation recall of drafter errors, all rules | 0.882 (15/17) |
+| Escalation recall of drafter errors, confidence gate alone | **0.000 (0/17)** |
+| Retrieval hit@3 / hit@1 | 1.000 / 0.967 |
+| Autonomous denials | 0 |
+| PHI spans surviving redaction | 0 |
+| Unparseable outputs defaulting to approval | 0 |
+| False approvals / false escalations | 2 / 2 |
+| Median latency (p95) | 2.7 s (9.4 s) |
+
+### The gate never fired
+
+Reported confidence took 7 distinct values: 1.0 (n=16), 0.99 (13), 0.97 (3),
+0.95 (19), 0.92 (1), 0.90 (5), 0.80 (3). The minimum observed value was exactly
+0.80, and the gate tests `<`.
+
+All 30 escalations came from rules that never consult confidence: 29 from the
+no-autonomous-denial invariant and 1 from an unresolved critique.
+
+### Confidence carries signal, but not where the gate can reach it
+
+The obvious reading is that self-reported confidence is uninformative. That is
+wrong, and the way it is wrong is the more interesting result.
+
+Confidence separates `documentation_gap` from every other stratum almost
+perfectly. All 45 cases outside that stratum scored at or above 0.95; 9 of the 15
+within it scored below, and no case outside it did (Mann-Whitney p<10^-5,
+rank-biserial 0.77, median 0.90 vs 0.99). The model reliably registers when
+required documentation is absent.
+
+The gate sits at 0.80. The discriminating boundary is at 0.95. The threshold is
+positioned below the entire range in which the signal varies, so it cannot act on
+a discriminator that is present in the data. The failure is one of threshold
+placement, not of an uninformative signal.
+
+### No threshold recovers the errors cheaply
+
+| τ | Escalated by gate | Errors caught | False approvals remaining |
+|---|---|---|---|
+| 0.80 | 0 | 0 | 2 |
+| 0.90 | 3 | 0 | 2 |
+| 0.95 | 9 | 0 | 2 |
+| 0.97 | 28 | 2 | 1 |
+| 0.99 | 31 | 4 | 0 |
+
+Catching one error requires τ=0.97, escalating 47% of cases. Eliminating both
+false approvals requires τ=0.99, escalating 52%. Confidence on the four errors
+was 0.95, 0.95, 0.97, 0.97 — drawn from the same upper band as the correct
+decisions.
+
+### Reproducing
+
+```bash
+pip install -r requirements.txt
+export GROQ_API_KEY=your_key_here
+python run_synthpa60.py --cases synthpa60/cases.jsonl --out runs/ --seeds 0
+python analyze_synthpa60.py --runs runs/ --out analysis/
+```
+
+Raw records: `results/synthpa60_seed0.jsonl`. Run metadata: `results/manifest.json`.
+
+The runner is resumable and paces itself against Groq's rate limits, which
+matters on the free tier: the daily allowance is 200,000 tokens against 137,282
+consumed per run.
 
 ## Repository layout
 
 ```
 app.py                    Streamlit operations console
-eval_autoauth.py          Evaluation harness
+run_synthpa60.py          Resumable, quota-aware evaluation driver
+autoauth_adapter.py       Maps graph state to evaluation records
+analyze_synthpa60.py      Metrics, tables, and figures from run logs
 backend/
   main.py                 FastAPI application and routes
   agent.py                LangGraph state machine and node definitions
-  tools.py                Tools available at the reasoning step
+  tools.py                CPT and ICD-10 lookups
   policy_store.py         Policy ingestion, chunking, FAISS index
+  evaluate.py             Smoke-test harness against the live API
   start.sh                Service entrypoint
-synthpa60/                SynthPA-60 benchmark
-  README.md               Benchmark documentation
-  cases.jsonl             60 labeled cases
+synthpa60/
+  cases.jsonl             60 labelled cases
   policies.jsonl          12 synthetic payer policies
-  cases_plan.jsonl        Stratification plan
-  synthpa60_kit.py        Case construction and label derivation
-  audit.py                Consistency audit over criterion assignments
-  make_worksheet.py       Generates the human validation worksheet
-  mark_validated.py       Records validation status
-  validation_worksheet.md
-  POLICY_SOURCING.md      Provenance of the synthetic policies
+  synthpa60_kit.py        Construction and label-derivation code
+  audit.py                Criteria-consistency audit
+results/
+  synthpa60_seed0.jsonl   Per-case records, seed 0
+  manifest.json           Run provenance
 requirements.txt
 ```
+
+`backend/evaluate.py` runs smoke tests against the live API and is superseded for
+benchmark evaluation by `run_synthpa60.py`, which is wired directly to the graph.
+`eval_autoauth.py` at the root is an earlier harness whose runner is not wired.
 
 ## Running locally
 
@@ -103,47 +229,39 @@ Then start the console in a second terminal:
 streamlit run app.py
 ```
 
-## Evaluation
-
-The harness runs cases against the live API and compares the returned decision
-to an expected label.
-
-The repository ships with **SynthPA-60**, a 60-case synthetic benchmark in
-`synthpa60/`. Cases are stratified across five categories: clear approve, clear
-deny, documentation gap, borderline, and retrieval distractor. They are written
-against twelve synthetic payer policies, whose provenance is documented in
-`synthpa60/POLICY_SOURCING.md`.
-
-Gold labels are derived deterministically from the policy criteria by a
-published `derive_label()` function rather than assigned by hand, so the label
-for any case can be recomputed from its inputs. Clinical notes were generated by
-a model other than the one under test. An automated consistency audit
-(`synthpa60/audit.py`) checks every criterion assignment against its case
-record. `human_validation` is recorded as `not_performed`.
-
-A full scored run against the current agent is outstanding and will accompany
-the technical write-up.
-
 ## Limitations
 
 Stated plainly, because a decision-support system that hides these is worse than
 one that does not have them.
 
-- **Redaction is pattern-based.** It matches common identifier formats and is a
-  demonstration of where redaction belongs in the pipeline, not a validated
-  de-identification pipeline. It has not been evaluated against a standard such
-  as HIPAA Safe Harbor.
-- **Confidence is self-reported.** The 0.80 threshold gates a value the model
-  produces about its own output. It has not been calibrated against outcomes.
-- **No published results yet.** The benchmark and harness are in the repository;
-  a complete scored run against the current agent is outstanding.
-- **Labels are synthetic and unvalidated by clinicians.** Gold labels follow
-  deterministically from the constructed policies. No clinician has reviewed
-  them.
-- **Single model, single policy corpus.** Behaviour across other models and
-  broader policy sets is untested.
+- **Redaction is pattern-based.** It matches labelled identifier formats and
+  demonstrates where redaction belongs in the pipeline. It is not a validated
+  de-identification stage and has not been evaluated against HIPAA Safe Harbor.
+- **The confidence gate does not work as designed.** It activated on 0 of 60
+  cases. The signal it gates carries real information, but the threshold is set
+  below the range in which that information varies. Replacing the self-reported
+  scalar with sequence likelihood, sampled-consistency agreement, or a conformal
+  procedure is the next experiment.
+- **The model cannot express MORE_INFO.** The output contract admits only
+  APPROVED and DENIED, so on all 15 documentation-gap cases the drafter produced
+  a decision rather than a request for documentation. Fourteen reached the
+  correct action through the no-autonomous-denial rule — the right outcome by the
+  wrong route.
+- **The `retrieval_distractor` stratum did not test what it was built to test.**
+  The designated distractor policy was retrieved in 0 of 60 cases; at
+  300-character chunks with k=3, a single policy usually fills the window. The
+  7/7 result on that stratum is an artifact.
+- **Single seed.** Run-to-run variance is uncharacterised.
+- **The evaluation set is small.** n=60 overall, 8–15 per stratum. Per-stratum
+  intervals span roughly 25 percentage points, and only four errors occurred, so
+  any error-conditioned statistic is underpowered.
+- **Synthetic policies, no clinician review.** Results bound feasibility rather
+  than establish clinical readiness.
+- **Single model, single policy corpus.** Whether the 0.95 boundary is a property
+  of this model, this prompt, or verbalised confidence in general is unknown.
 - **Not for clinical use.** Research prototype only.
 
 ## Author
 
 Faleha Qazi — [falehaqazi.github.io](https://falehaqazi.github.io) · [LinkedIn](https://linkedin.com/in/falehaqazi)
+
