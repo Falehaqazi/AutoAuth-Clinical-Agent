@@ -11,7 +11,7 @@ the escalation work. That result is reported here rather than tuned away.
 
 **Stack:** Python, LangGraph, FAISS, Sentence-Transformers, `openai/gpt-oss-20b` via Groq, FastAPI, Streamlit
 
-**Live demo:** https://falehaqazi-autoauth-clinical-agent-app-tx3rkx.streamlit.app/
+Live demo: link withheld for anonymous review
 
 ## Architecture
 
@@ -210,7 +210,7 @@ benchmark evaluation by `run_synthpa60.py`, which is wired directly to the graph
 Requires a Groq API key.
 
 ```bash
-git clone https://github.com/Falehaqazi/AutoAuth-Clinical-Agent.git
+git clone <repository-url>
 cd AutoAuth-Clinical-Agent
 pip install -r requirements.txt
 export GROQ_API_KEY=your_key_here
@@ -260,4 +260,3 @@ one that does not have them.
 - **Single model, single policy corpus.** Whether the 0.95 boundary is a property
   of this model, this prompt, or verbalised confidence in general is unknown.
 - **Not for clinical use.** Research prototype only.
-
