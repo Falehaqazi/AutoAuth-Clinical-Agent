@@ -6,8 +6,9 @@ Requests are reviewed against insurance policy text, and every decision carries 
 confidence score, a reasoning trace, and an audit record.
 
 The name is now partly a misnomer, and the evaluation below explains why: on the
-SynthPA-60 benchmark the confidence gate never fires. The structural rules do all
-the escalation work. That result is reported here rather than tuned away.
+SynthPA-60 benchmark the confidence gate is never the sole cause of an escalation.
+The structural rules do essentially all the escalation work. That result is
+reported here rather than tuned away.
 
 **Stack:** Python, LangGraph, FAISS, Sentence-Transformers, `openai/gpt-oss-20b` via Groq, FastAPI, Streamlit
 
@@ -33,7 +34,10 @@ redact -> retrieve -> reason -> tools -> critique -> finalize
 | `finalize` | Applies four escalation rules and emits the audited decision |
 
 Retrieval uses `all-MiniLM-L6-v2` embeddings over 300-character chunks with
-50-character overlap, indexed in a flat FAISS index built at startup.
+50-character overlap, indexed in a flat FAISS index built at startup. The index
+and encoder are deterministic, so retrieval is bit-identical across seeds; all
+run-to-run variation in the results below comes from the reasoning and critique
+steps.
 
 ### Model note
 
@@ -67,7 +71,8 @@ a readable decision is not evidence of a favourable one.
 
 **4. Confidence gate at 0.80 (probabilistic).** The model states a confidence
 value with each draft, and anything below `0.80` is routed to human review.
-**On SynthPA-60 this rule activated on 0 of 60 cases.** See Evaluation.
+**Across 180 case-runs (3 seeds x 60 cases), this rule activated only twice, and
+in both instances the draft had already been flagged by rule 2.** See Evaluation.
 
 **5. Unresolved critique escalates (probabilistic).** If the critic still objects
 after the revision budget is spent, the case goes to review.
@@ -100,46 +105,59 @@ policy and carry no regulatory authority. No case has had clinician review.
 
 ## Evaluation
 
-First complete run: 60 cases, zero execution errors, `openai/gpt-oss-20b` at
-temperature 0.1, single seed.
+Three seeds over all 60 cases, 180 case-runs total, zero execution errors,
+`openai/gpt-oss-20b` at temperature 0.1.
 
 The label space is three-valued but the system's action space is binary — it
 returns either APPROVED or PENDING_REVIEW — so the primary task is
 approve-versus-escalate.
 
-| | |
-|---|---|
-| Action accuracy | 93.3% (56/60), 95% CI 84.1–97.4% |
-| Coverage | 0.500 (30/60 auto-decided) |
-| Selective accuracy on the auto lane | 0.933 (28/30), CI 0.787–0.982 |
-| Escalation recall of drafter errors, all rules | 0.882 (15/17) |
-| Escalation recall of drafter errors, confidence gate alone | **0.000 (0/17)** |
-| Retrieval hit@3 / hit@1 | 1.000 / 0.967 |
-| Autonomous denials | 0 |
-| PHI spans surviving redaction | 0 |
-| Unparseable outputs defaulting to approval | 0 |
-| False approvals / false escalations | 2 / 2 |
-| Median latency (p95) | 2.7 s (9.4 s) |
+| | Seed 0 | Seed 1 | Seed 2 |
+|---|---|---|---|
+| Action accuracy | 0.933 (56/60) | 0.900 (54/60) | 0.917 (55/60) |
+| Coverage | 0.500 | 0.500 | 0.517 |
+| Selective accuracy, auto lane | 0.933 (28/30) | 0.900 | 0.903 (28/31) |
+| Escalation recall of drafter errors (ER) | 0.882 (15/17) | 0.842 (16/19) | 0.833 (15/18) |
 
-### The gate never fired
+Mean action accuracy 0.917, range 3.3 percentage points. Wilson 95% CI on the
+primary seed (0): 0.841–0.974.
 
-Reported confidence took 7 distinct values: 1.0 (n=16), 0.99 (13), 0.97 (3),
-0.95 (19), 0.92 (1), 0.90 (5), 0.80 (3). The minimum observed value was exactly
-0.80, and the gate tests `<`.
+Retrieval was bit-identical across all three seeds: hit@3 = 1.000 (60/60),
+hit@1 = 0.967 (58/60), designated distractor retrieved in 0/60. Safety
+invariants held in all 180 case-runs: zero autonomous denials, zero PHI spans
+surviving redaction, zero unparseable outputs defaulting to approval. Pooled
+median latency 2.3 s (p95 7.1 s) over 403,607 tokens.
 
-All 30 escalations came from rules that never consult confidence: 29 from the
-no-autonomous-denial invariant and 1 from an unresolved critique.
+### The gate almost never fires, and never fires alone
+
+Reported confidence took 7 distinct values on the primary seed: 1.0 (n=16), 0.99
+(13), 0.97 (3), 0.95 (19), 0.92 (1), 0.90 (5), 0.80 (3). The minimum was exactly
+0.80, and the gate tests `<`, so it activated zero times on that seed.
+
+Across all three seeds the gate activated twice in 180 case-runs — at 0.75 and
+0.78. **In both cases the drafter had produced a denial, so the no-autonomous-
+denial rule had already fired.** The confidence gate has never, in any run, been
+the sole cause of an escalation. On the primary seed, all 30 escalations came
+from no-autonomous-denial (29) and unresolved-critique (1).
 
 ### Confidence carries signal, but not where the gate can reach it
 
 The obvious reading is that self-reported confidence is uninformative. That is
 wrong, and the way it is wrong is the more interesting result.
 
-Confidence separates `documentation_gap` from every other stratum almost
-perfectly. All 45 cases outside that stratum scored at or above 0.95; 9 of the 15
-within it scored below, and no case outside it did (Mann-Whitney p<10^-5,
-rank-biserial 0.77, median 0.90 vs 0.99). The model reliably registers when
-required documentation is absent.
+Confidence separates `documentation_gap` from every other stratum, and the effect
+replicates across all three seeds:
+
+| Seed | z | rank-biserial | dg < 0.95 | other < 0.95 |
+|---|---|---|---|---|
+| 0 | -4.45 | 0.77 | 9/15 | 0/45 |
+| 1 | -4.33 | 0.75 | 9/15 | 2/45 |
+| 2 | -3.76 | 0.65 | 8/15 | 0/45 |
+
+Pooled across 180 case-runs: 26/45 `documentation_gap` runs fell below 0.95,
+against 2/135 from every other stratum combined. The model reliably registers
+when required documentation is absent, and expresses it as a value in the
+0.78-0.92 band rather than the 0.95-1.0 band it uses elsewhere.
 
 The gate sits at 0.80. The discriminating boundary is at 0.95. The threshold is
 positioned below the entire range in which the signal varies, so it cannot act on
@@ -147,6 +165,8 @@ a discriminator that is present in the data. The failure is one of threshold
 placement, not of an uninformative signal.
 
 ### No threshold recovers the errors cheaply
+
+Sweep on the primary seed:
 
 | τ | Escalated by gate | Errors caught | False approvals remaining |
 |---|---|---|---|
@@ -157,24 +177,55 @@ placement, not of an uninformative signal.
 | 0.99 | 31 | 4 | 0 |
 
 Catching one error requires τ=0.97, escalating 47% of cases. Eliminating both
-false approvals requires τ=0.99, escalating 52%. Confidence on the four errors
-was 0.95, 0.95, 0.97, 0.97 — drawn from the same upper band as the correct
-decisions.
+false approvals requires τ=0.99, escalating 52%. Pooling all three seeds, the 15
+error runs had mean confidence 0.951 against 0.965 for the 165 correct runs —
+errors are drawn from the same upper band as correct decisions, not a lower one.
+
+### Sampled consistency as a candidate replacement signal
+
+Agreement across the three seeds costs nothing beyond the runs already
+performed. Decisions were unanimous on 57/60 cases; all 3 cases where seeds
+disagreed were wrong in at least one run (precision 1.00), against 4/57
+unanimous cases ever wrong (7%).
+
+Two qualifications. First, this signal isn't independent of verbalised
+confidence -- split cases carry mean confidence 0.888 against 0.968 for unanimous
+ones, and both gate activations fall among the split cases. Second, and more
+important: the four errors that recur in *every* seed are unanimous and
+confidently reported. Sampled consistency would have flagged 3 of 7 distinct
+error cases and none of the 4 stable ones. **Both signals detect instability;
+neither detects a stable, repeatable error** -- which is the failure mode that
+actually reaches a decision.
+
+### Error analysis
+
+4 of 7 distinct error cases recur in all three seeds; the other 3 appear in only
+one seed each. The four stable errors share a pattern: the model reports
+satisfaction of the criteria it discusses and omits criteria it doesn't discuss,
+rather than weighing a missing criterion and misjudging it.
+
+Five of the seven error cases occurred where retrieval returned chunks from more
+than one policy (5/31 vs. 2/29 single-policy windows; Fisher exact p=0.426 -- not
+significant at this sample size, reported as a hypothesis rather than a finding).
+The gold policy was ranked first in 29 of those 31 multi-policy windows, so this
+isn't a retrieval-ranking failure: the correct policy was present and top-ranked,
+and the model sometimes applied criteria from the competing one instead.
 
 ### Reproducing
 
 ```bash
 pip install -r requirements.txt
 export GROQ_API_KEY=your_key_here
-python run_synthpa60.py --cases synthpa60/cases.jsonl --out runs/ --seeds 0
+python run_synthpa60.py --cases synthpa60/cases.jsonl --out runs/ --seeds 0 1 2
 python analyze_synthpa60.py --runs runs/ --out analysis/
 ```
 
-Raw records: `results/synthpa60_seed0.jsonl`. Run metadata: `results/manifest.json`.
+Raw records: `results/synthpa60_seed{0,1,2}.jsonl`. Run metadata:
+`results/manifest.json`.
 
 The runner is resumable and paces itself against Groq's rate limits, which
-matters on the free tier: the daily allowance is 200,000 tokens against 137,282
-consumed per run.
+matters on the free tier: the daily allowance is 200,000 tokens against
+~135,000 consumed per seed.
 
 ## Repository layout
 
@@ -197,6 +248,8 @@ synthpa60/
   audit.py                Criteria-consistency audit
 results/
   synthpa60_seed0.jsonl   Per-case records, seed 0
+  synthpa60_seed1.jsonl   Per-case records, seed 1
+  synthpa60_seed2.jsonl   Per-case records, seed 2
   manifest.json           Run provenance
 requirements.txt
 ```
@@ -237,26 +290,29 @@ one that does not have them.
 - **Redaction is pattern-based.** It matches labelled identifier formats and
   demonstrates where redaction belongs in the pipeline. It is not a validated
   de-identification stage and has not been evaluated against HIPAA Safe Harbor.
-- **The confidence gate does not work as designed.** It activated on 0 of 60
-  cases. The signal it gates carries real information, but the threshold is set
-  below the range in which that information varies. Replacing the self-reported
-  scalar with sequence likelihood, sampled-consistency agreement, or a conformal
-  procedure is the next experiment.
+- **The confidence gate does not work as designed.** It was the sole cause of an
+  escalation in 0 of 180 case-runs across three seeds. The signal it gates
+  carries real information, but the threshold is set below the range in which
+  that information varies.
+- **Sampled consistency is not a sufficient replacement.** It flags every
+  unstable case with perfect precision but misses the four errors that recur
+  identically in every seed -- the failure mode that matters most, since it looks
+  identical to a correct decision under repeated sampling.
 - **The model cannot express MORE_INFO.** The output contract admits only
   APPROVED and DENIED, so on all 15 documentation-gap cases the drafter produced
-  a decision rather than a request for documentation. Fourteen reached the
-  correct action through the no-autonomous-denial rule — the right outcome by the
-  wrong route.
+  a decision rather than a request for documentation. Most reached the correct
+  action through the no-autonomous-denial rule -- the right outcome by the wrong
+  route.
 - **The `retrieval_distractor` stratum did not test what it was built to test.**
-  The designated distractor policy was retrieved in 0 of 60 cases; at
-  300-character chunks with k=3, a single policy usually fills the window. The
-  7/7 result on that stratum is an artifact.
-- **Single seed.** Run-to-run variance is uncharacterised.
-- **The evaluation set is small.** n=60 overall, 8–15 per stratum. Per-stratum
-  intervals span roughly 25 percentage points, and only four errors occurred, so
-  any error-conditioned statistic is underpowered.
+  The designated distractor policy was retrieved in 0/60 cases across all seeds;
+  at 300-character chunks with k=3, a single policy usually fills the window.
+- **The evaluation set is small.** n=60 overall, 8-15 per stratum. Only 7
+  distinct error cases occurred across three seeds, so error-conditioned
+  statistics (including the multi-policy retrieval hypothesis above) are
+  underpowered.
 - **Synthetic policies, no clinician review.** Results bound feasibility rather
   than establish clinical readiness.
-- **Single model, single policy corpus.** Whether the 0.95 boundary is a property
-  of this model, this prompt, or verbalised confidence in general is unknown.
+- **Single model, single policy corpus.** Whether the 0.95 boundary is a
+  property of this model, this prompt, or verbalised confidence in general is
+  unknown.
 - **Not for clinical use.** Research prototype only.
