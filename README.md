@@ -261,7 +261,3 @@ one that does not have them.
   of this model, this prompt, or verbalised confidence in general is unknown.
 - **Not for clinical use.** Research prototype only.
 
-## Author
-
-Faleha Qazi — [falehaqazi.github.io](https://falehaqazi.github.io) · [LinkedIn](https://linkedin.com/in/falehaqazi)
-
